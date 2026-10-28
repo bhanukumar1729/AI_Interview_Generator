@@ -38,7 +38,7 @@ const Dashboard = () => {
 
   if (!interview || interview.status !== 'ended') {
     return (
-      <section className="mx-auto max-w-7xl space-y-8 px-4 py-8 animate-in fade-in slide-in-from-bottom-4 duration-700 sm:px-6 lg:px-8">
+      <section className="max-w-7xl mx-auto p-8 space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
         <div className="text-center py-20">
           <h2 className="mb-4 font-serif text-4xl">No Interview Data</h2>
           <p className="text-muted">Complete an interview to see your analysis here.</p>
@@ -57,77 +57,38 @@ const Dashboard = () => {
     : 'N/A';
 
   return (
-    <section className="mx-auto max-w-7xl space-y-8 px-4 py-8 animate-in fade-in slide-in-from-bottom-4 duration-700 sm:px-6 lg:px-8">
-
+    <section className="max-w-7xl mx-auto p-8 space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {interviews.length > 1 && (
+        <div className="border-y border-rule py-5 dark:border-white/10">
+          <p className="mb-3 text-[10px] uppercase tracking-[.14em] text-muted">Previous interviews</p>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {interviews.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setInterview(item)}
+                className={`shrink-0 border px-4 py-3 text-left text-sm transition-colors ${
+                  item.id === interview.id
+                    ? 'border-accent bg-accent text-white'
+                    : 'border-rule hover:bg-[#F3F1EB] dark:border-white/15 dark:hover:bg-white/5'
+                }`}
+              >
+                <span className="block font-medium">{item.role}</span>
+                <span className="mt-1 block text-xs opacity-70">{new Date(item.createdAt).toLocaleDateString()}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="flex items-end justify-between border-b border-rule pb-8 dark:border-white/10">
         <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-accent">Your progress</p>
-          <h2 className="font-serif text-4xl tracking-tight sm:text-5xl">Interview Assessment</h2>
+          <h2 className="font-serif text-5xl">Interview Assessment</h2>
           <p className="mt-2 text-sm text-muted">{interview.role} / {interview.type} / {formattedDate}</p>
         </div>
         <div className="text-right">
           <div className="font-serif text-6xl">{score}<span className="ml-2 text-xl text-muted">/ 100</span></div>
-          <div className="mt-3 h-2 w-48 max-w-full overflow-hidden rounded-full bg-rule dark:bg-white/10"><div className="h-full rounded-full bg-accent" style={{ width: `${Math.max(0, Math.min(100, Number(score) || 0))}%` }} /></div>
           <p className="text-[10px] uppercase tracking-[.14em] text-muted">Overall score</p>
         </div>
       </div>
-
-      {interviews.length > 1 && (
-        <section className="space-y-4">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[.18em] text-accent">Your history</p>
-              <h3 className="mt-1 font-serif text-3xl">Previous Interviews</h3>
-            </div>
-            <p className="text-sm text-muted">{interviews.length} completed interviews · Select a card to view its report</p>
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {interviews.map((item) => {
-              const isSelected = item.id === interview.id;
-              const itemDate = item.createdAt
-                ? new Date(item.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-                : 'Date unavailable';
-              const itemScore = Number(item.averageScore) || 0;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setInterview(item)}
-                  aria-pressed={isSelected}
-                  className={`group rounded-2xl border p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-accent/50 ${
-                    isSelected
-                      ? 'border-accent bg-accent/[0.07] shadow-sm ring-1 ring-accent/30'
-                      : 'border-rule bg-white hover:border-accent/50 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${isSelected ? 'bg-accent text-white' : 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-gray-300'}`}>
-                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" />
-                      </svg>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${isSelected ? 'bg-accent/15 text-accent' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'}`}>
-                      {isSelected ? 'Currently viewing' : 'Completed'}
-                    </span>
-                  </div>
-                  <h4 className="mt-5 text-lg font-semibold">{item.role || 'Interview'}</h4>
-                  <p className="mt-1 text-sm text-muted">{item.type || 'General'} interview</p>
-                  <div className="mt-5 flex items-end justify-between border-t border-rule pt-4 dark:border-white/10">
-                    <div>
-                      <p className="text-xs text-muted">Interview date</p>
-                      <p className="mt-1 text-sm font-medium">{itemDate}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-muted">Score</p>
-                      <p className="mt-0.5 font-serif text-2xl">{itemScore}<span className="ml-1 text-xs text-muted">/100</span></p>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
 
       {/* Summary Section */}
       {interview.summary && (
