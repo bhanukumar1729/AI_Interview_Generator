@@ -1,45 +1,156 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 
+/* ---------- helpers ---------- */
+
+const fmtDate = (d, opts = { year: 'numeric', month: 'short', day: 'numeric' }) =>
+  d ? new Date(d).toLocaleDateString('en-US', opts) : 'N/A';
+
+const bandLabel = (score) => (score >= 75 ? 'Strong' : score >= 50 ? 'Satisfactory' : 'Needs improvement');
+
+const label = 'text-[10px] uppercase tracking-[.14em] text-muted';
+const rule = 'border-rule dark:border-white/10';
+
+/* ---------- pieces ---------- */
+
+const Stat = ({ title, value, note }) => (
+  <div className="px-6 py-5">
+    <p className={label}>{title}</p>
+    <p className="mt-2 font-serif text-4xl leading-none">{value}</p>
+    {note && <p className="mt-2 text-xs text-muted">{note}</p>}
+  </div>
+);
+
+const TrendChart = ({ items, activeId, onSelect }) => {
+  const W = 640;
+  const H = 180;
+  const padX = 28;
+  const padY = 20;
+
+  if (items.length < 2) {
+    return <p className="py-10 text-sm text-muted">A trend appears once two interviews are completed.</p>;
+  }
+
+  const pts = items.map((it, i) => ({
+    id: it.id,
+    score: it.averageScore || 0,
+    x: padX + (i * (W - padX * 2)) / (items.length - 1),
+    y: H - padY - ((it.averageScore || 0) / 100) * (H - padY * 2),
+  }));
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Overall score across interviews">
+      {[0, 25, 50, 75, 100].map((g) => {
+        const y = H - padY - (g / 100) * (H - padY * 2);
+        return (
+          <g key={g}>
+            <line x1={padX} x2={W - padX} y1={y} y2={y} className="stroke-slate-300 dark:stroke-white/10" strokeWidth="1" />
+            <text x={0} y={y + 3} fontSize="9" className="fill-slate-500">{g}</text>
+          </g>
+        );
+      })}
+      <polyline points={pts.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" strokeWidth="1.5" className="stroke-accent" />
+      {pts.map((p) => (
+        <circle
+          key={p.id}
+          cx={p.x}
+          cy={p.y}
+          r={p.id === activeId ? 5 : 3.5}
+          strokeWidth="1.5"
+          className={`cursor-pointer stroke-accent ${p.id === activeId ? 'fill-accent' : 'fill-white dark:fill-black'}`}
+          onClick={() => onSelect(p.id)}
+        >
+          <title>{p.score}</title>
+        </circle>
+      ))}
+    </svg>
+  );
+};
+
+const TopicList = ({ title, topics, empty }) => (
+  <div>
+    <h3 className={`${label} mb-3`}>{title}</h3>
+    {topics && topics.length > 0 ? (
+      <ul className={`divide-y border-y ${rule} divide-rule dark:divide-white/10`}>
+        {topics.map((t, i) => (
+          <li key={i} className="py-3 text-sm text-slate-700 dark:text-gray-300">{t}</li>
+        ))}
+      </ul>
+    ) : (
+      <p className="border-y border-rule py-3 text-sm text-muted dark:border-white/10">{empty}</p>
+    )}
+  </div>
+);
+
+/* ---------- main ---------- */
+
 const Dashboard = () => {
-  const [interview, setInterview] = useState(null);
   const [interviews, setInterviews] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchInterviewHistory = async () => {
       try {
         const res = await axios.get('http://localhost:8000/ai/interviews', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
         });
-        const completedInterviews = res.data.interviews.filter((item) => item.status === 'ended');
-        setInterviews(completedInterviews);
-        setInterview(completedInterviews[0] || null);
-      } catch (error) {
-        console.error("Failed to fetch interview history:", error);
+        const completed = (res.data.interviews || [])
+          .filter((item) => item.status === 'ended')
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        setInterviews(completed);
+        setSelectedId(completed[0]?.id ?? null);
+      } catch (err) {
+        console.error('Failed to fetch interview history:', err);
+        setError('Interview history could not be loaded. Please refresh the page.');
       } finally {
         setLoading(false);
       }
     };
-
     fetchInterviewHistory();
   }, []);
 
+  const interview = useMemo(() => interviews.find((i) => i.id === selectedId) || null, [interviews, selectedId]);
+  const chronological = useMemo(() => [...interviews].reverse(), [interviews]);
+
+  const stats = useMemo(() => {
+    if (!interviews.length) return null;
+    const scores = interviews.map((i) => i.averageScore || 0);
+    return {
+      total: interviews.length,
+      avg: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
+      best: Math.max(...scores),
+      delta: scores.length > 1 ? Math.round(scores[0] - scores[1]) : null,
+    };
+  }, [interviews]);
+
   if (loading) {
     return (
-      <section className="max-w-7xl mx-auto p-8 flex items-center justify-center min-h-[60vh]">
+      <section className="mx-auto flex min-h-[60vh] max-w-7xl items-center justify-center p-8">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto mb-4"></div>
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-purple-500" />
           <p className="text-sm text-muted">Loading interview analysis...</p>
         </div>
       </section>
     );
   }
 
-  if (!interview || interview.status !== 'ended') {
+  if (error) {
     return (
-      <section className="mx-auto max-w-7xl space-y-8 px-4 py-8 animate-in fade-in slide-in-from-bottom-4 duration-700 sm:px-6 lg:px-8">
-        <div className="text-center py-20">
+      <section className="mx-auto max-w-7xl p-8">
+        <div className="py-20 text-center">
+          <h2 className="mb-4 font-serif text-4xl">Unable to load data</h2>
+          <p className="text-muted">{error}</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (!interview) {
+    return (
+      <section className="mx-auto max-w-7xl p-8">
+        <div className="py-20 text-center">
           <h2 className="mb-4 font-serif text-4xl">No Interview Data</h2>
           <p className="text-muted">Complete an interview to see your analysis here.</p>
         </div>
@@ -48,151 +159,110 @@ const Dashboard = () => {
   }
 
   const score = interview.averageScore || 0;
-  const formattedDate = interview.createdAt 
-    ? new Date(interview.createdAt).toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'short', 
-        day: 'numeric' 
-      })
-    : 'N/A';
 
   return (
-    <section className="mx-auto max-w-7xl space-y-8 px-4 py-8 animate-in fade-in slide-in-from-bottom-4 duration-700 sm:px-6 lg:px-8">
-
-      <div className="flex items-end justify-between border-b border-rule pb-8 dark:border-white/10">
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-accent">Your progress</p>
-          <h2 className="font-serif text-4xl tracking-tight sm:text-5xl">Interview Assessment</h2>
-          <p className="mt-2 text-sm text-muted">{interview.role} / {interview.type} / {formattedDate}</p>
-        </div>
-        <div className="text-right">
-          <div className="font-serif text-6xl">{score}<span className="ml-2 text-xl text-muted">/ 100</span></div>
-          <div className="mt-3 h-2 w-48 max-w-full overflow-hidden rounded-full bg-rule dark:bg-white/10"><div className="h-full rounded-full bg-accent" style={{ width: `${Math.max(0, Math.min(100, Number(score) || 0))}%` }} /></div>
-          <p className="text-[10px] uppercase tracking-[.14em] text-muted">Overall score</p>
-        </div>
+    <section className="mx-auto max-w-7xl space-y-10 p-8">
+      {/* Page heading */}
+      <div className={`border-b pb-8 ${rule}`}>
+        <h1 className="font-serif text-5xl">Dashboard</h1>
+        <p className="mt-2 text-sm text-muted">A record of your completed interviews and areas for development.</p>
       </div>
 
-      {interviews.length > 1 && (
-        <section className="space-y-4">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[.18em] text-accent">Your history</p>
-              <h3 className="mt-1 font-serif text-3xl">Previous Interviews</h3>
-            </div>
-            <p className="text-sm text-muted">{interviews.length} completed interviews · Select a card to view its report</p>
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {/* Overview */}
+      <div className={`grid grid-cols-2 divide-x divide-y border ${rule} divide-rule dark:divide-white/10 lg:grid-cols-4 lg:divide-y-0`}>
+        <Stat title="Interviews completed" value={stats.total} />
+        <Stat title="Average score" value={stats.avg} note="Across all interviews" />
+        <Stat title="Highest score" value={stats.best} />
+        <Stat
+          title="Change since previous"
+          value={stats.delta === null ? 'N/A' : `${stats.delta > 0 ? '+' : ''}${stats.delta}`}
+          note={stats.delta === null ? 'Requires two interviews' : 'Latest compared with the one before'}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[300px_minmax(0,1fr)]">
+        {/* History */}
+        <aside>
+          <p className={`${label} mb-3`}>Interview history</p>
+          <ul className={`max-h-[28rem] divide-y overflow-y-auto border-y ${rule} divide-rule dark:divide-white/10 lg:max-h-[calc(100vh-10rem)]`}>
             {interviews.map((item) => {
-              const isSelected = item.id === interview.id;
-              const itemDate = item.createdAt
-                ? new Date(item.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-                : 'Date unavailable';
-              const itemScore = Number(item.averageScore) || 0;
+              const active = item.id === interview.id;
               return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setInterview(item)}
-                  aria-pressed={isSelected}
-                  className={`group rounded-2xl border p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-accent/50 ${
-                    isSelected
-                      ? 'border-accent bg-accent/[0.07] shadow-sm ring-1 ring-accent/30'
-                      : 'border-rule bg-white hover:border-accent/50 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${isSelected ? 'bg-accent text-white' : 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-gray-300'}`}>
-                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" />
-                      </svg>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${isSelected ? 'bg-accent/15 text-accent' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'}`}>
-                      {isSelected ? 'Currently viewing' : 'Completed'}
+                <li key={item.id}>
+                  <button
+                    onClick={() => setSelectedId(item.id)}
+                    aria-current={active ? 'true' : undefined}
+                    className={`flex w-full items-center justify-between gap-4 px-4 py-4 text-left text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${
+                      active ? 'bg-accent text-white' : 'hover:bg-[#F3F1EB] dark:hover:bg-white/5'
+                    }`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">{item.role}</span>
+                      <span className="mt-1 block truncate text-xs opacity-70">
+                        {item.type} / {fmtDate(item.createdAt)}
+                      </span>
                     </span>
-                  </div>
-                  <h4 className="mt-5 text-lg font-semibold">{item.role || 'Interview'}</h4>
-                  <p className="mt-1 text-sm text-muted">{item.type || 'General'} interview</p>
-                  <div className="mt-5 flex items-end justify-between border-t border-rule pt-4 dark:border-white/10">
-                    <div>
-                      <p className="text-xs text-muted">Interview date</p>
-                      <p className="mt-1 text-sm font-medium">{itemDate}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-muted">Score</p>
-                      <p className="mt-0.5 font-serif text-2xl">{itemScore}<span className="ml-1 text-xs text-muted">/100</span></p>
-                    </div>
-                  </div>
-                </button>
+                    <span className="font-serif text-2xl leading-none">{Math.round(item.averageScore || 0)}</span>
+                  </button>
+                </li>
               );
             })}
+          </ul>
+        </aside>
+
+        {/* Selected interview */}
+        <div className="min-w-0 space-y-10">
+          <div className={`flex flex-wrap items-end justify-between gap-6 border-b pb-8 ${rule}`}>
+            <div>
+              <h2 className="font-serif text-4xl sm:text-5xl">Interview Assessment</h2>
+              <p className="mt-2 text-sm text-muted">
+                {interview.role} / {interview.type} / {fmtDate(interview.createdAt)}
+              </p>
+            </div>
+            <div className="text-right">
+              <div className="font-serif text-6xl">
+                {score}
+                <span className="ml-2 text-xl text-muted">/ 100</span>
+              </div>
+              <p className={label}>Overall score / {bandLabel(score)}</p>
+            </div>
           </div>
-        </section>
-      )}
 
-      {/* Summary Section */}
-      {interview.summary && (
-        <div className="border-b border-rule py-8 dark:border-white/10">
-          <h3 className="text-xs font-bold text-gray-500 uppercase mb-4">Interview Summary</h3>
-          <p className="max-w-3xl leading-8 text-muted">{interview.summary}</p>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Strong Topics */}
-        <div className="p-8 rounded-[2rem] bg-white/70 dark:bg-white/5 border border-slate-200 dark:border-white/10 backdrop-blur-md">
-          <h3 className="text-xs font-bold text-green-400 uppercase mb-4">Strong Concepts</h3>
-          {interview.strongTopics && interview.strongTopics.length > 0 ? (
-            <ul className="space-y-3">
-              {interview.strongTopics.map((topic, idx) => (
-                <li key={idx} className="flex items-start gap-3">
-                  <svg className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-slate-700 dark:text-gray-300">{topic}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-slate-600 dark:text-gray-500 text-sm">No strong topics identified</p>
+          {interview.summary && (
+            <div className={`border-b pb-10 ${rule}`}>
+              <h3 className={`${label} mb-4`}>Interview summary</h3>
+              <p className="max-w-3xl font-serif text-lg leading-8 text-slate-700 dark:text-gray-300">{interview.summary}</p>
+            </div>
           )}
-        </div>
 
-        {/* Weak Topics */}
-        <div className="p-8 rounded-[2rem] bg-white/70 dark:bg-white/5 border border-slate-200 dark:border-white/10 backdrop-blur-md">
-          <h3 className="text-xs font-bold text-red-400 uppercase mb-4">Weak Concepts</h3>
-          {interview.weakTopics && interview.weakTopics.length > 0 ? (
-            <ul className="space-y-3">
-              {interview.weakTopics.map((topic, idx) => (
-                <li key={idx} className="flex items-start gap-3">
-                  <svg className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-slate-700 dark:text-gray-300">{topic}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-slate-600 dark:text-gray-500 text-sm">No weak topics identified</p>
+          <div className={`border-b pb-10 ${rule}`}>
+            <div className="mb-4 flex items-baseline justify-between gap-4">
+              <h3 className={label}>Score history</h3>
+              <p className="text-xs text-muted">Select a point to view that interview.</p>
+            </div>
+            <TrendChart items={chronological} activeId={interview.id} onSelect={setSelectedId} />
+          </div>
+
+          <div className="grid grid-cols-1 gap-10 xl:grid-cols-2">
+            <TopicList title="Strong concepts" topics={interview.strongTopics} empty="No strong topics identified." />
+            <TopicList title="Weak concepts" topics={interview.weakTopics} empty="No weak topics identified." />
+          </div>
+
+          {interview.suggestions && interview.suggestions.length > 0 && (
+            <div>
+              <h3 className={`${label} mb-3`}>Recommendations for improvement</h3>
+              <ol className={`divide-y border-y ${rule} divide-rule dark:divide-white/10`}>
+                {interview.suggestions.map((suggestion, idx) => (
+                  <li key={idx} className="flex items-start gap-5 py-5">
+                    <span className="w-6 shrink-0 font-serif text-xl text-muted">{idx + 1}</span>
+                    <p className="max-w-3xl leading-7 text-slate-700 dark:text-gray-300">{suggestion}</p>
+                  </li>
+                ))}
+              </ol>
+            </div>
           )}
         </div>
       </div>
-
-      {/* Suggestions Section */}
-      {interview.suggestions && interview.suggestions.length > 0 && (
-        <div className="p-8 rounded-[2rem] bg-gradient-to-br from-purple-500/10 to-blue-500/10 border border-purple-500/20 backdrop-blur-md">
-          <h3 className="text-xs font-bold text-purple-400 uppercase mb-4">How to Improve</h3>
-          <ul className="space-y-4">
-            {interview.suggestions.map((suggestion, idx) => (
-              <li key={idx} className="flex items-start gap-3">
-                <div className="w-6 h-6 rounded-full bg-purple-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-purple-400 text-xs font-bold">{idx + 1}</span>
-                </div>
-                <p className="text-slate-700 dark:text-gray-300 leading-relaxed">{suggestion}</p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </section>
   );
 };
